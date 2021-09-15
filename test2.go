@@ -14,6 +14,7 @@ import (
 )
 
 var schem = make(chan struct{}, 20)
+
 func main()  {
 	var wg sync.WaitGroup
 	var dir *string
@@ -28,9 +29,26 @@ func main()  {
 		fmt.Fprintf(os.Stderr, "filename  is not empty")
 		os.Exit(1)
 	}
+	var regFunc func(regx, filename string)bool
+	switch *findMod {
+	case "exact" :
+		regFunc = func(regx, filename string) bool {
+			if regx == filename {
+				return true
+			}
+			return false
+		}
+	case "suffix":
+		regFunc = func(regx, filename string) bool {
+			patten := fmt.Sprintf(`^.*%s$`, regx)
+			reg, _ := regexp.Match(patten, []byte(filename))
+			return reg
+		}
+	}
+
 	fileInfo := make(chan string)
 	wg.Add(1)
-	go recursionDir(*dir, &wg, fileInfo, *tagFile, *findMod)
+	go recursionDir(*dir, &wg, fileInfo, *tagFile, regFunc)
 	go func() {
 		wg.Wait()
 		close(fileInfo)
@@ -54,41 +72,24 @@ func main()  {
 	}
 }
 
-func recursionDir(dir string, wg *sync.WaitGroup, fileinfo chan <-string, targfile, mod string)  {
+func recursionDir(dir string, wg *sync.WaitGroup, fileinfo chan <-string, targfile string, regfuc func(regx, filename string)bool)  {
 	defer wg.Done()
 	for _, file := range readDir(dir){
 		if file.IsDir() {
 			wg.Add(1)
 			filePath := filepath.Join(dir, file.Name())
-			if isMatch(targfile, file.Name(), mod) {
+			if regfuc(targfile, file.Name()) {
 				fileinfo <- filepath.Join(dir, file.Name())
 			}
-			go recursionDir(filePath, wg, fileinfo, targfile, mod)
+			go recursionDir(filePath, wg, fileinfo, targfile,  regfuc)
 		}else {
-			if isMatch(targfile, file.Name(), mod) {
+			if regfuc(targfile, file.Name()) {
 				fileinfo <- filepath.Join(dir, file.Name())
 			}
 		}
 	}
 }
 
-func isMatch(regx, filename, mod string)bool  {
-	var reg bool
-	switch mod {
-	case "exact":
-		if regx == filename {
-			return true
-		}
-		return false
-	case "suffix":
-		patten := fmt.Sprintf(`^.*%s$`, regx)
-		reg, _ = regexp.Match(patten, []byte(filename))
-		return reg
-	default:
-		return reg
-	}
-
-}
 
 //读取文件夹
 func readDir(dir string) []os.FileInfo  {
