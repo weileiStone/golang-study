@@ -1,0 +1,107 @@
+package main
+
+import (
+	"fmt"
+	"io/ioutil"
+
+	// "io/ioutil"
+	"regexp"
+
+	tree_sitter "github.com/tree-sitter/go-tree-sitter"
+	tree_sitter_go "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	tree_sitter_html "github.com/tree-sitter/tree-sitter-html/bindings/go"
+	tree_sitter_javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
+	tree_sitter_php "github.com/tree-sitter/tree-sitter-php/bindings/go"
+)
+
+func main() {
+	// code := []byte("type ActiveDefenseLog struct {UserName string `json:\"username\" gorm:\"column:username\" excel:\"用户名\"`}")
+	language := `go`
+	code, _ := ioutil.ReadFile(`D:\workplace\prog\safe-cactus-go\internal\model\device_mgr\const.go`)
+	// code := []byte(`'passwordContains': '密码包含',`)
+	//export CGO_CFLAGS="-I/custom/path/include"
+	// export CGO_LDFLAGS="-L/custom/path/lib"
+	parser := tree_sitter.NewParser()
+	defer parser.Close()
+	// parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_javascript.Language()))
+	switch language {
+	case `php`:
+		parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_php.LanguagePHP()))
+	case `go`:
+		parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_go.Language()))
+	case `js`:
+		parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_javascript.Language()))
+	case `html`:
+		parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_html.Language()))
+	}
+
+	tree := parser.Parse(code, nil)
+	defer tree.Close()
+
+	root := tree.RootNode()
+	// fmt.Println(root.ToSexp())
+	treeCurs := root.Walk()
+	defer treeCurs.Close()
+	NodeWalk(treeCurs, code)
+}
+
+func BuildInputEditTree(data string, oldNode tree_sitter.Node) *tree_sitter.InputEdit {
+	newData := []byte(data)
+	parser := tree_sitter.NewParser()
+	defer parser.Close()
+	parser.SetLanguage(tree_sitter.NewLanguage(tree_sitter_php.LanguagePHPOnly()))
+	tree := parser.Parse(newData, nil)
+	defer tree.Close()
+	newNode := tree.RootNode()
+	newRange := newNode.Range()
+	oldRange := oldNode.Range()
+
+	inputEdit := &tree_sitter.InputEdit{
+		StartByte:      newRange.StartByte,
+		OldEndByte:     oldRange.EndByte,
+		NewEndByte:     newRange.EndByte,
+		StartPosition:  newRange.StartPoint,
+		OldEndPosition: oldRange.EndPoint,
+		NewEndPosition: newRange.EndPoint,
+	}
+	return inputEdit
+}
+
+func NodeWalk(ts *tree_sitter.TreeCursor, sourceVal []byte) {
+	defer ts.Close()
+	root := ts.Node()
+	for _, nd := range root.Children(ts) {
+		NodeWalk(nd.Walk(), sourceVal)
+	}
+	// valval := sourceVal[root.StartByte():root.EndByte()]
+	// if IsContainChinese(string(valval)) {
+	// 	fmt.Printf("root grammar name %s root Kind %s, kind id %d, grammar id %d, start byte %d, end byte %d, val val %s, row %d \r\n",
+	// 		root.GrammarName(), root.Kind(), root.KindId(), root.GrammarId(), root.StartByte(), root.EndByte(), string(valval), root.StartPosition().Row+1)
+	// }
+
+	// if root.KindId() == 362 || root.KindId() == 363 || root.KindId() == 367 { //php str
+	// if root.KindId() == 132 { //jsstr
+	// if root.KindId() == 16 { //html
+	if root.KindId() == 81 || root.KindId() == 83 { //go
+		valval := sourceVal[root.StartByte():root.EndByte()]
+		// pushlog := sourceVal[root.StartByte()-12 : root.StartByte()-2]
+		// adminHigg := sourceVal[root.StartByte()-21 : root.StartByte()-2]
+		// adminMiddle := sourceVal[root.StartByte()-23 : root.StartByte()-2]
+		if IsContainChinese(string(valval)) {
+			// fmt.Printf("pushlog %s \r\n", string(adminMiddle))
+			fmt.Printf("root grammar name %s root Kind %s, kind id %d, grammar id %d, start byte %d, end byte %d, val val %s, row %d \r\n",
+				root.GrammarName(), root.Kind(), root.KindId(), root.GrammarId(), root.StartByte(), root.EndByte(), string(valval), root.StartPosition().Row+1)
+		}
+
+	}
+}
+
+func IsContainChinese(str string) bool {
+	pattern := "[\u4e00-\u9fa5]" // 匹配中文字符的正则表达式
+	matched, err := regexp.MatchString(pattern, str)
+	if err != nil {
+		fmt.Printf(`ReadFile err %s`, err)
+	}
+
+	return matched
+}
